@@ -17,7 +17,7 @@ const DEFAULT_OPTIONS: SearchOptions = {
   semanticLimit: 20,
   keywordLimit: 20,
   topK: 5,
-  similarityThreshold: 0.7,
+  similarityThreshold: 0.3, // Lowered from 0.7 to catch more relevant results
 };
 
 // Reciprocal Rank Fusion score

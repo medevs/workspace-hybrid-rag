@@ -52,6 +52,26 @@ export interface ChatMessage {
   sources?: { filename: string; excerpt: string }[];
 }
 
+// Conversation
+export interface Conversation {
+  id: string;
+  user_id: string;
+  workspace_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Message (database record)
+export interface Message {
+  id: string;
+  conversation_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  sources: { filename: string; excerpt: string }[];
+  created_at: string;
+}
+
 // API Response Types
 export interface ApiError {
   error: string;
