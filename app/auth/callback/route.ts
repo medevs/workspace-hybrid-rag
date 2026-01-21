@@ -8,9 +8,29 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
-    if (!error) {
+    if (!error && data.user) {
+      // Create user profile if it doesn't exist
+      const workspaceId = data.user.user_metadata?.workspace_id;
+
+      if (workspaceId) {
+        const { error: profileError } = await supabase
+          .from('users')
+          .upsert(
+            {
+              id: data.user.id,
+              email: data.user.email!,
+              workspace_id: workspaceId,
+            },
+            { onConflict: 'id' }
+          );
+
+        if (profileError) {
+          console.error('Error creating user profile:', profileError);
+        }
+      }
+
       return NextResponse.redirect(`${origin}${next}`);
     }
   }

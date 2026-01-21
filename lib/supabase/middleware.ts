@@ -29,7 +29,7 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Protected routes
+  // Protected routes - redirect unauthenticated users to login
   const protectedPaths = ['/chat', '/documents'];
   const isProtectedPath = protectedPaths.some((path) =>
     request.nextUrl.pathname.startsWith(path)
@@ -38,6 +38,18 @@ export async function updateSession(request: NextRequest) {
   if (isProtectedPath && !user) {
     const url = request.nextUrl.clone();
     url.pathname = '/auth/login';
+    return NextResponse.redirect(url);
+  }
+
+  // Redirect authenticated users away from auth pages
+  const authPaths = ['/auth/login', '/auth/signup'];
+  const isAuthPath = authPaths.some((path) =>
+    request.nextUrl.pathname.startsWith(path)
+  );
+
+  if (isAuthPath && user) {
+    const url = request.nextUrl.clone();
+    url.pathname = '/chat';
     return NextResponse.redirect(url);
   }
 
