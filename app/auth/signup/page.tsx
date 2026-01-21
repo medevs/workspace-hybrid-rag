@@ -94,9 +94,26 @@ export default function SignupPage() {
     if (data.user && !data.session) {
       // Email confirmation required
       toast.success('Check your email to confirm your account');
-    } else if (data.session) {
+    } else if (data.session && data.user) {
       // Signed in immediately (email confirmation disabled)
-      toast.success('Account created successfully');
+      // Create user profile in users table
+      const { error: profileError } = await supabase
+        .from('users')
+        .upsert(
+          {
+            id: data.user.id,
+            email: data.user.email!,
+            workspace_id: values.workspaceId,
+          },
+          { onConflict: 'id' }
+        );
+
+      if (profileError) {
+        console.error('Error creating user profile:', profileError);
+        toast.error('Account created but profile setup failed');
+      } else {
+        toast.success('Account created successfully');
+      }
       router.push('/chat');
     }
 
