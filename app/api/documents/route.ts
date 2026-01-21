@@ -3,6 +3,63 @@ import { getUserFromSession, createAdminClient } from '@/lib/db';
 import { chunkText } from '@/lib/chunking';
 import { generateEmbeddings } from '@/lib/embeddings';
 import { documentUploadSchema, documentDeleteSchema } from '@/lib/validations/documents';
+import { extractText, getDocumentProxy } from 'unpdf';
+
+/**
+ * Extract text content from a file based on its type
+ */
+async function extractTextContent(
+  content: string,
+  fileType: string | undefined,
+  isBase64: boolean | undefined
+): Promise<string> {
+  console.log('extractTextContent called with:', { fileType, isBase64, contentLength: content.length });
+
+  // Plain text files
+  if (fileType === 'text/plain' || !isBase64) {
+    console.log('Treating as plain text');
+    return content;
+  }
+
+  // Decode base64 to buffer
+  console.log('Decoding base64 content...');
+  const buffer = Buffer.from(content, 'base64');
+  console.log('Buffer created, size:', buffer.length);
+
+  // PDF files
+  if (fileType === 'application/pdf') {
+    console.log('Parsing PDF file with unpdf...');
+    try {
+      // Convert Node.js Buffer to Uint8Array for unpdf
+      const uint8Array = new Uint8Array(buffer);
+
+      // Load PDF document
+      const pdf = await getDocumentProxy(uint8Array);
+      console.log('PDF loaded, pages:', pdf.numPages);
+
+      // Extract text with merged pages
+      const { text, totalPages } = await extractText(pdf, { mergePages: true });
+      console.log('PDF parsed successfully, pages:', totalPages, 'text length:', text.length);
+
+      // Clean up
+      await pdf.destroy();
+
+      return text;
+    } catch (error) {
+      console.error('PDF parsing error:', error);
+      throw new Error(`Failed to parse PDF file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // DOCX files - not yet supported
+  if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    throw new Error('DOCX files are not yet supported. Please convert to PDF or TXT.');
+  }
+
+  // Unknown file type, try to use as text
+  console.log('Unknown file type, using as text');
+  return content;
+}
 
 export async function POST(request: NextRequest) {
   const user = await getUserFromSession();
@@ -32,11 +89,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { filename, content, fileType, fileSize } = parsed.data;
+  const { filename, content, fileType, fileSize, isBase64 } = parsed.data;
   const supabase = createAdminClient();
 
   try {
-    // 1. Create document record
+    // 1. Extract text content from file (handles PDF, TXT, etc.)
+    const textContent = await extractTextContent(content, fileType, isBase64);
+
+    if (!textContent || textContent.trim().length === 0) {
+      return NextResponse.json(
+        { error: 'No text content could be extracted from the file', code: 'EMPTY_CONTENT' },
+        { status: 400 }
+      );
+    }
+
+    // 2. Create document record
     const { data: document, error: docError } = await supabase
       .from('documents')
       .insert({
@@ -51,10 +118,10 @@ export async function POST(request: NextRequest) {
 
     if (docError) throw docError;
 
-    // 2. Chunk the text
-    const textChunks = chunkText(content);
+    // 3. Chunk the text
+    const textChunks = chunkText(textContent);
 
-    // 3. Create chunk records
+    // 4. Create chunk records
     const chunkRecords = textChunks.map((text, index) => ({
       document_id: document.id,
       workspace_id: user.workspaceId,
@@ -69,11 +136,11 @@ export async function POST(request: NextRequest) {
 
     if (chunkError) throw chunkError;
 
-    // 4. Generate embeddings
+    // 5. Generate embeddings
     const embeddingInputs = chunks.map(c => ({ id: c.id, text: c.text }));
     const embeddings = await generateEmbeddings(embeddingInputs.map(e => e.text));
 
-    // 5. Store embeddings
+    // 6. Store embeddings
     const embeddingRecords = chunks.map((chunk, index) => ({
       chunk_id: chunk.id,
       embedding: embeddings[index],
@@ -93,8 +160,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Document upload error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: 'Failed to process document', code: 'PROCESSING_ERROR' },
+      { error: `Failed to process document: ${errorMessage}`, code: 'PROCESSING_ERROR' },
       { status: 500 }
     );
   }

@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { MessageSquare, Trash2, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,8 +24,6 @@ export function ConversationItem({
   onSelect,
   onDelete,
 }: ConversationItemProps) {
-  const [showMenu, setShowMenu] = useState(false);
-
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -42,17 +39,15 @@ export function ConversationItem({
   return (
     <div
       className={cn(
-        'group flex items-center gap-2 p-2 rounded-md cursor-pointer transition-colors',
+        'group flex items-start gap-2 p-2 rounded-md cursor-pointer transition-colors',
         isActive ? 'bg-accent' : 'hover:bg-accent/50'
       )}
       onClick={onSelect}
-      onMouseEnter={() => setShowMenu(true)}
-      onMouseLeave={() => setShowMenu(false)}
     >
-      <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
 
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{conversation.title}</p>
+        <p className="text-sm font-medium line-clamp-2" title={conversation.title}>{conversation.title}</p>
         <p className="text-xs text-muted-foreground">
           {formatDate(conversation.updated_at)}
         </p>
@@ -63,10 +58,7 @@ export function ConversationItem({
           <Button
             variant="ghost"
             size="icon"
-            className={cn(
-              'h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity',
-              showMenu && 'opacity-100'
-            )}
+            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
             onClick={(e) => e.stopPropagation()}
           >
             <MoreHorizontal className="h-4 w-4" />

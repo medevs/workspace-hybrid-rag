@@ -24,10 +24,20 @@ export function ChatInterface({
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Track conversation IDs created in this session to avoid refetching during streaming
+  const locallyCreatedConversationRef = useRef<string | null>(null);
+
   // Load conversation messages when conversationId changes
   useEffect(() => {
     if (!conversationId) {
       setMessages([]);
+      locallyCreatedConversationRef.current = null;
+      return;
+    }
+
+    // Skip fetching if this conversation was just created locally (during streaming)
+    // The messages are already in local state from the streaming response
+    if (locallyCreatedConversationRef.current === conversationId) {
       return;
     }
 
@@ -117,24 +127,34 @@ export function ChatInterface({
             const chunk = JSON.parse(line);
 
             if (chunk.type === 'conversation_id' && !conversationId) {
+              // Mark this as a locally-created conversation to prevent refetch
+              locallyCreatedConversationRef.current = chunk.data;
               onConversationCreated(chunk.data);
             } else if (chunk.type === 'sources') {
               setMessages(prev => {
-                const updated = [...prev];
-                const last = updated[updated.length - 1];
-                if (last.role === 'assistant') {
-                  last.sources = chunk.data;
+                const lastIndex = prev.length - 1;
+                const last = prev[lastIndex];
+                if (last?.role === 'assistant') {
+                  // Create new array with new object (immutable update)
+                  return [
+                    ...prev.slice(0, lastIndex),
+                    { ...last, sources: chunk.data }
+                  ];
                 }
-                return updated;
+                return prev;
               });
             } else if (chunk.type === 'content') {
               setMessages(prev => {
-                const updated = [...prev];
-                const last = updated[updated.length - 1];
-                if (last.role === 'assistant') {
-                  last.content += chunk.data;
+                const lastIndex = prev.length - 1;
+                const last = prev[lastIndex];
+                if (last?.role === 'assistant') {
+                  // Create new array with new object (immutable update)
+                  return [
+                    ...prev.slice(0, lastIndex),
+                    { ...last, content: last.content + chunk.data }
+                  ];
                 }
-                return updated;
+                return prev;
               });
             } else if (chunk.type === 'error') {
               throw new Error(chunk.data);
@@ -146,14 +166,13 @@ export function ChatInterface({
       }
     } catch (error) {
       console.error('Chat error:', error);
-      // Remove empty assistant message on error
+      // Remove empty assistant message on error (immutable update)
       setMessages(prev => {
-        const updated = [...prev];
-        const last = updated[updated.length - 1];
-        if (last.role === 'assistant' && !last.content) {
-          updated.pop();
+        const last = prev[prev.length - 1];
+        if (last?.role === 'assistant' && !last.content) {
+          return prev.slice(0, -1);
         }
-        return updated;
+        return prev;
       });
       toast.error(error instanceof Error ? error.message : 'Failed to get response');
     } finally {
@@ -190,12 +209,12 @@ export function ChatInterface({
         )}
       </ScrollArea>
 
-      <form onSubmit={handleSubmit} className="p-4 border-t shrink-0">
+      <form onSubmit={handleSubmit} className="p-3 md:p-4 border-t shrink-0">
         <div className="flex gap-2">
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask a question about your documents..."
+            placeholder="Ask about your docs..."
             disabled={isLoading}
             className="flex-1"
           />

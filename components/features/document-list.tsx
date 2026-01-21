@@ -133,7 +133,8 @@ export function DocumentList({ refreshTrigger }: DocumentListProps) {
         <h3 className="text-sm font-medium">Documents ({documents.length})</h3>
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon"
+          className="h-8 w-8"
           onClick={fetchDocuments}
           title="Refresh"
         >
@@ -141,7 +142,7 @@ export function DocumentList({ refreshTrigger }: DocumentListProps) {
         </Button>
       </div>
 
-      <ScrollArea className="h-[300px]">
+      <ScrollArea className="flex-1 min-h-0">
         <div className="space-y-2 pr-4">
           {documents.map(doc => (
             <div
@@ -151,7 +152,7 @@ export function DocumentList({ refreshTrigger }: DocumentListProps) {
               <FileText className="h-8 w-8 text-muted-foreground shrink-0" />
 
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate" title={doc.filename}>
+                <p className="text-sm font-medium line-clamp-2" title={doc.filename}>
                   {doc.filename}
                 </p>
                 <p className="text-xs text-muted-foreground">
@@ -161,8 +162,8 @@ export function DocumentList({ refreshTrigger }: DocumentListProps) {
 
               <Button
                 variant="ghost"
-                size="icon-sm"
-                className="shrink-0 text-muted-foreground hover:text-destructive"
+                size="icon"
+                className="shrink-0 h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                 onClick={() => handleDelete(doc.id, doc.filename)}
                 disabled={deletingId === doc.id}
                 title="Delete document"

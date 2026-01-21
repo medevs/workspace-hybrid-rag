@@ -5,6 +5,7 @@ export const documentUploadSchema = z.object({
   content: z.string().min(1, 'Content is required'),
   fileType: z.string().optional(),
   fileSize: z.number().optional(),
+  isBase64: z.boolean().optional(),
 });
 
 export const documentDeleteSchema = z.object({

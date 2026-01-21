@@ -21,7 +21,29 @@ export function DocumentDropzone({ onUploadComplete }: DocumentDropzoneProps) {
 
     for (const file of acceptedFiles) {
       try {
-        const content = await file.text();
+        // Read file as base64 for binary files (PDF, DOCX) or text for plain text
+        let content: string;
+        let isBase64 = false;
+
+        if (file.type === 'text/plain') {
+          // Plain text files can be read directly
+          content = await file.text();
+        } else {
+          // Binary files (PDF, DOCX) need to be sent as base64
+          // Use FileReader for reliable base64 encoding
+          content = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const result = reader.result as string;
+              // Remove the data URL prefix (e.g., "data:application/pdf;base64,")
+              const base64 = result.split(',')[1];
+              resolve(base64);
+            };
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsDataURL(file);
+          });
+          isBase64 = true;
+        }
 
         const response = await fetch('/api/documents', {
           method: 'POST',
@@ -31,6 +53,7 @@ export function DocumentDropzone({ onUploadComplete }: DocumentDropzoneProps) {
             content,
             fileType: file.type,
             fileSize: file.size,
+            isBase64,
           }),
         });
 
@@ -72,7 +95,7 @@ export function DocumentDropzone({ onUploadComplete }: DocumentDropzoneProps) {
     <div
       {...getRootProps()}
       className={cn(
-        'border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors',
+        'border-2 border-dashed rounded-lg p-4 md:p-6 text-center cursor-pointer transition-colors',
         'hover:border-primary/50 hover:bg-accent/50',
         isDragActive && 'border-primary bg-accent',
         isDragAccept && 'border-green-500 bg-green-50 dark:bg-green-950/20',
@@ -85,17 +108,17 @@ export function DocumentDropzone({ onUploadComplete }: DocumentDropzoneProps) {
       <div className="flex flex-col items-center gap-3">
         {isDragReject ? (
           <>
-            <AlertCircle className="h-10 w-10 text-destructive" />
+            <AlertCircle className="h-8 w-8 md:h-10 md:w-10 text-destructive" />
             <p className="text-sm text-destructive">File type not supported</p>
           </>
         ) : isDragAccept ? (
           <>
-            <FileText className="h-10 w-10 text-green-600" />
+            <FileText className="h-8 w-8 md:h-10 md:w-10 text-green-600" />
             <p className="text-sm text-green-600">Drop to upload</p>
           </>
         ) : (
           <>
-            <Upload className="h-10 w-10 text-muted-foreground" />
+            <Upload className="h-8 w-8 md:h-10 md:w-10 text-muted-foreground" />
             <div>
               <p className="text-sm font-medium">
                 {isUploading ? 'Uploading...' : 'Drag & drop files here'}

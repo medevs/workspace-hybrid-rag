@@ -8,15 +8,12 @@ import { cn } from "@/lib/utils"
 
 function ResizablePanelGroup({
   className,
-  orientation = "horizontal",
   ...props
 }: React.ComponentProps<typeof Group>) {
   return (
     <Group
-      orientation={orientation}
       className={cn(
         "flex h-full w-full",
-        orientation === "vertical" && "flex-col",
         className
       )}
       {...props}

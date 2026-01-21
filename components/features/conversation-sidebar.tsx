@@ -63,7 +63,7 @@ export function ConversationSidebar({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-3 border-b">
+      <div className="p-2 md:p-3 border-b">
         <Button
           onClick={onNewChat}
           className="w-full justify-start gap-2"
