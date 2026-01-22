@@ -12,6 +12,29 @@ Answer only using the following context. If the answer is not in the context, sa
 Be concise and accurate. Always cite which document the information comes from when possible.
 Format your response in markdown when appropriate.`;
 
+const QUERY_REWRITE_PROMPT = `You are a query rewriter for a document search system. Your task is to rewrite follow-up questions into standalone, searchable queries.
+
+Given the conversation history and the current question, rewrite the question to be self-contained and specific. The rewritten query should:
+1. Include all necessary context from the conversation
+2. Resolve pronouns (he, she, it, they, that, this) to their actual referents
+3. Be specific enough to find relevant documents
+4. Maintain the user's original intent
+
+Examples:
+- History: "What tech stack does Ahmed use?" → Answer about JavaScript, Node.js...
+  Current: "what else?"
+  Rewritten: "What other skills, technologies, experience, or qualifications does Ahmed have besides his tech stack?"
+
+- History: "Tell me about the company's revenue" → Answer about $50 million...
+  Current: "and the employees?"
+  Rewritten: "How many employees does the company have and what is the employee information?"
+
+- History: "What is John's role?" → Answer about CEO position...
+  Current: "tell me more about him"
+  Rewritten: "What additional information is available about John, including his background, responsibilities, and achievements?"
+
+IMPORTANT: Return ONLY the rewritten query, nothing else. No explanations, no quotes, just the query.`;
+
 const CONTEXT_MESSAGE_LIMIT = 6; // Last 3 exchanges (6 messages)
 
 interface RAGContext {
@@ -25,29 +48,104 @@ interface RAGResponse {
   sources: SearchResult[];
 }
 
-// Fetch recent messages for context
+// Fetch recent messages for context (excluding the most recent message which is the current question)
 async function getConversationContext(conversationId: string): Promise<Message[]> {
   const supabase = createAdminClient();
+  // Use range(1, ...) to skip the most recent message (the current user question that was just saved)
+  // This ensures we only get PREVIOUS conversation history, not the current question
   const { data, error } = await supabase
     .from('messages')
     .select('id, conversation_id, role, content, sources, created_at')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: false })
-    .limit(CONTEXT_MESSAGE_LIMIT);
+    .range(1, CONTEXT_MESSAGE_LIMIT);
 
-  if (error || !data) return [];
+  if (error) {
+    console.error('[getConversationContext] Error:', error);
+    return [];
+  }
+
+  console.log(`[getConversationContext] Found ${data?.length || 0} messages for conversation ${conversationId}`);
+
+  if (!data || data.length === 0) return [];
   return data.reverse() as Message[]; // Chronological order
 }
 
-// Build conversation history string
-function buildConversationHistory(messages: Message[]): string {
-  if (messages.length === 0) return '';
+// Rewrite follow-up questions to be standalone and searchable
+async function rewriteQueryWithContext(
+  question: string,
+  historyMessages: Message[]
+): Promise<string> {
+  console.log(`[rewriteQueryWithContext] Question: "${question}", History messages: ${historyMessages.length}`);
 
-  const history = messages
+  // If no history, return as-is
+  if (historyMessages.length === 0) {
+    console.log('[rewriteQueryWithContext] No history, returning original question');
+    return question;
+  }
+
+  // Build conversation history string for the rewriter
+  const historyStr = historyMessages
     .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n\n');
 
-  return `\n\nPrevious conversation:\n${history}\n\n`;
+  console.log(`[rewriteQueryWithContext] History preview: ${historyStr.substring(0, 200)}...`);
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: QUERY_REWRITE_PROMPT },
+        {
+          role: 'user',
+          content: `Conversation history:\n${historyStr}\n\nCurrent question: ${question}\n\nRewritten query:`,
+        },
+      ],
+      temperature: 0.3, // Lower temperature for more consistent rewrites
+      max_completion_tokens: 200,
+    });
+
+    const rewrittenQuery = response.choices[0].message.content?.trim();
+
+    // Fallback to original if rewrite fails or is empty
+    if (!rewrittenQuery) {
+      console.log('[rewriteQueryWithContext] Empty response, returning original');
+      return question;
+    }
+
+    console.log(`[Query Rewrite] "${question}" → "${rewrittenQuery}"`);
+    return rewrittenQuery;
+  } catch (error) {
+    console.error('[rewriteQueryWithContext] Error:', error);
+    return question;
+  }
+}
+
+// Convert conversation history to OpenAI message format
+function buildOpenAIMessages(
+  historyMessages: Message[],
+  context: string,
+  question: string
+): { role: 'system' | 'user' | 'assistant'; content: string }[] {
+  const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
+    { role: 'system', content: SYSTEM_PROMPT },
+  ];
+
+  // Add previous conversation messages in proper multi-turn format
+  for (const msg of historyMessages) {
+    messages.push({
+      role: msg.role as 'user' | 'assistant',
+      content: msg.content,
+    });
+  }
+
+  // Add current question with document context
+  messages.push({
+    role: 'user',
+    content: `Based on the following documents:\n\n${context}\n\nQuestion: ${question}`,
+  });
+
+  return messages;
 }
 
 // Build context string from search results
@@ -96,15 +194,17 @@ export async function updateConversationTitle(
 export async function generateRAGAnswer(config: RAGContext): Promise<RAGResponse> {
   const { question, workspaceId, conversationId } = config;
 
-  // Get conversation history if continuing
-  let conversationHistory = '';
+  // Get conversation history if continuing (excludes current message)
+  let historyMessages: Message[] = [];
   if (conversationId) {
-    const messages = await getConversationContext(conversationId);
-    conversationHistory = buildConversationHistory(messages);
+    historyMessages = await getConversationContext(conversationId);
   }
 
-  // Search for relevant chunks
-  const searchResults = await hybridSearch(question, workspaceId);
+  // Rewrite query with context for better search results
+  const searchQuery = await rewriteQueryWithContext(question, historyMessages);
+
+  // Search for relevant chunks using the rewritten query
+  const searchResults = await hybridSearch(searchQuery, workspaceId);
 
   if (searchResults.length === 0) {
     return {
@@ -114,13 +214,13 @@ export async function generateRAGAnswer(config: RAGContext): Promise<RAGResponse
   }
 
   const context = buildContext(searchResults);
+  // Use the rewritten query for LLM prompt so it knows what to answer
+  const questionForLLM = searchQuery !== question ? searchQuery : question;
+  const messages = buildOpenAIMessages(historyMessages, context, questionForLLM);
 
   const response = await openai.chat.completions.create({
     model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: `Context:\n${context}${conversationHistory}\nQuestion: ${question}` },
-    ],
+    messages,
     temperature: 0.5,
     max_completion_tokens: 1000,
   });
@@ -145,15 +245,22 @@ export async function* generateRAGAnswerStream(
 ): AsyncGenerator<{ type: 'sources' | 'content' | 'done'; data?: { filename: string; excerpt: string }[] | string }> {
   const { question, workspaceId, conversationId } = config;
 
-  // Get conversation history if continuing
-  let conversationHistory = '';
+  console.log(`[generateRAGAnswerStream] Question: "${question}", ConversationId: ${conversationId}`);
+
+  // Get conversation history if continuing (excludes current message)
+  let historyMessages: Message[] = [];
   if (conversationId) {
-    const messages = await getConversationContext(conversationId);
-    conversationHistory = buildConversationHistory(messages);
+    historyMessages = await getConversationContext(conversationId);
+    console.log(`[generateRAGAnswerStream] Got ${historyMessages.length} history messages`);
   }
 
-  // Search for relevant chunks
-  const searchResults = await hybridSearch(question, workspaceId);
+  // Rewrite query with context for better search results
+  const searchQuery = await rewriteQueryWithContext(question, historyMessages);
+  console.log(`[generateRAGAnswerStream] Search query: "${searchQuery}"`);
+
+  // Search for relevant chunks using the rewritten query
+  const searchResults = await hybridSearch(searchQuery, workspaceId);
+  console.log(`[generateRAGAnswerStream] Found ${searchResults.length} search results`);
 
   // Yield transformed sources first
   yield { type: 'sources', data: transformSources(searchResults) };
@@ -168,13 +275,15 @@ export async function* generateRAGAnswerStream(
   }
 
   const context = buildContext(searchResults);
+  // Use the rewritten query for LLM prompt so it knows what to answer
+  // This ensures the LLM understands the full context of follow-up questions
+  const questionForLLM = searchQuery !== question ? searchQuery : question;
+  console.log(`[generateRAGAnswerStream] Question for LLM: "${questionForLLM.substring(0, 100)}..."`);
+  const messages = buildOpenAIMessages(historyMessages, context, questionForLLM);
 
   const stream = await openai.chat.completions.create({
     model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: `Context:\n${context}${conversationHistory}\nQuestion: ${question}` },
-    ],
+    messages,
     temperature: 0.5,
     max_completion_tokens: 1000,
     stream: true,

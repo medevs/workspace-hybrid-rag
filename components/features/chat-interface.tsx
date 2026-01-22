@@ -189,25 +189,29 @@ export function ChatInterface({
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <ScrollArea className="flex-1 p-4">
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="text-4xl mb-4">💬</div>
-            <h3 className="text-lg font-semibold">Start a conversation</h3>
-            <p className="text-muted-foreground text-sm max-w-md">
-              Ask questions about your uploaded documents
-            </p>
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <ScrollArea className="h-full">
+          <div className="p-4">
+            {messages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center min-h-[300px] text-center">
+                <div className="text-4xl mb-4">💬</div>
+                <h3 className="text-lg font-semibold">Start a conversation</h3>
+                <p className="text-muted-foreground text-sm max-w-md">
+                  Ask questions about your uploaded documents
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {messages.map((message, i) => (
+                  <ChatMessage key={i} message={message} />
+                ))}
+                <div ref={scrollRef} />
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="space-y-4">
-            {messages.map((message, i) => (
-              <ChatMessage key={i} message={message} />
-            ))}
-            <div ref={scrollRef} />
-          </div>
-        )}
-      </ScrollArea>
+        </ScrollArea>
+      </div>
 
       <form onSubmit={handleSubmit} className="p-3 md:p-4 border-t shrink-0">
         <div className="flex gap-2">

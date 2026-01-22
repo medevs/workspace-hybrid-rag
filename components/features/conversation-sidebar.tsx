@@ -62,8 +62,8 @@ export function ConversationSidebar({
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="p-2 md:p-3 border-b">
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="p-2 md:p-3 border-b shrink-0">
         <Button
           onClick={onNewChat}
           className="w-full justify-start gap-2"
@@ -74,8 +74,9 @@ export function ConversationSidebar({
         </Button>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="p-2 space-y-1">
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <ScrollArea className="h-full">
+          <div className="p-2 space-y-1">
           {isLoading ? (
             <>
               <Skeleton className="h-12 w-full" />
@@ -99,8 +100,9 @@ export function ConversationSidebar({
               />
             ))
           )}
-        </div>
-      </ScrollArea>
+          </div>
+        </ScrollArea>
+      </div>
     </div>
   );
 }

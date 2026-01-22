@@ -1,6 +1,7 @@
 'use client';
 
 import { User, Bot, FileText } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { cn } from '@/lib/utils';
 import type { ChatMessage as ChatMessageType } from '@/types';
 
@@ -27,16 +28,22 @@ export function ChatMessage({ message }: ChatMessageProps) {
         {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
       </div>
 
-      <div className={cn('flex-1 space-y-2', isUser && 'text-right')}>
+      <div className={cn('flex-1 space-y-2 min-w-0', isUser && 'text-right')}>
         <div
           className={cn(
-            'inline-block rounded-lg px-4 py-2 max-w-[80%]',
+            'rounded-lg px-4 py-2',
             isUser
-              ? 'bg-primary text-primary-foreground'
+              ? 'inline-block max-w-[80%] bg-primary text-primary-foreground'
               : 'bg-muted'
           )}
         >
-          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+          {isUser ? (
+            <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+          ) : (
+            <div className="text-sm prose prose-sm dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-headings:font-semibold prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2 prose-pre:overflow-x-auto prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:bg-muted-foreground/20 prose-code:before:content-none prose-code:after:content-none max-w-none break-words">
+              <ReactMarkdown>{message.content}</ReactMarkdown>
+            </div>
+          )}
         </div>
 
         {message.sources && message.sources.length > 0 && (
